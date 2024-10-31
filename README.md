@@ -1,4 +1,4 @@
-# GO Shorty - A URL Shortener Service
+# GoShorty - A URL Shortener Service
 
 ## Design is given in the image below
 ![goshorty app design](https://github.com/gauravhegade/goshorty/blob/main/goshorty_design.png)
