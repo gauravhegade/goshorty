@@ -1,14 +1,14 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
-	"math/rand"
 	"net/http"
 	"os"
-	"regexp"
 	"time"
 
+	"github.com/gauravhegade/goshorty/helpers"
 	"github.com/gin-gonic/gin"
 	"github.com/knadh/koanf/parsers/json"
 	"github.com/knadh/koanf/providers/file"
@@ -18,13 +18,10 @@ import (
 // new config parser
 var k = koanf.New(".")
 
-// global map for storing shorturls
-var shorturls = make(map[string]map[string]string)
-
 type shortUrl struct {
-	LongUrl     string `json:"url"`
-	CustomAlias string `json:"custom_alias"` // if any custom alias is given by the user
-	ExpiryDate  string `json:"expiry_date"`  // if any expiry date is given by the user
+	LongUrl     string `json:"url" binding:"required"`
+	CustomAlias string `json:"custom_alias"` // optional
+	ExpiryDate  string `json:"expiry_date"`  // optional
 }
 
 func main() {
@@ -34,37 +31,53 @@ func main() {
 	if err := k.Load(file.Provider(".env.json"), json.Parser()); err != nil {
 		fmt.Fprintln(os.Stderr, "failed to read environment variables")
 	}
-	portNumber := k.String("app.port")
+
+	// connect to database
+	databaseURL := k.String("database_url")
+	conn, err := helpers.NewPostgres(databaseURL)
+	if err != nil {
+		log.Fatalf("Error: %v", err.Error())
+		return
+	}
+	defer conn.Close(context.Background())
 
 	// gin.SetMode(gin.ReleaseMode)
 	router := gin.Default()
 	router.SetTrustedProxies([]string{"*"})
 
 	// api endpoints
+	router.GET("/", homeHandler)
 	router.GET("/urls", getAllShortUrls)
 	router.GET("/:key", getLongUrlByKey)
 	router.POST("/urls", createShortUrl)
 
+	// get port number from env
+	portNumber := k.String("port")
 	router.Run(":" + portNumber)
 }
 
+func homeHandler(c *gin.Context) {
+	c.Data(http.StatusOK, "text/plain", []byte("URL Shortener Service"))
+}
+
 func getAllShortUrls(c *gin.Context) {
-	c.IndentedJSON(http.StatusOK, shorturls)
+	c.IndentedJSON(http.StatusOK, helpers.ShortUrls)
 }
 
 func createShortUrl(c *gin.Context) {
 	var su shortUrl
 
-	if err := c.BindJSON(&su); err != nil {
-		c.IndentedJSON(http.StatusNotImplemented, gin.H{"message": "not a url"})
+	if err := c.ShouldBind(&su); err != nil {
+		c.IndentedJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
 
-	shortUrlKey := generateShortUrlKey(6)
+	shortUrlKey := helpers.GenerateShortUrlKey(6)
 	customFormat := time.DateOnly + " " + time.TimeOnly
 	shortUrlCreationDate := time.Now().Format(customFormat)
 
-	if validDomain := isValidDomainName(su.LongUrl); validDomain {
-		buildMap(shortUrlKey, su.LongUrl, su.CustomAlias, shortUrlCreationDate, su.ExpiryDate)
+	if validDomain := helpers.IsValidDomainName(su.LongUrl); validDomain {
+		helpers.BuildMap(shortUrlKey, su.LongUrl, su.CustomAlias, shortUrlCreationDate, su.ExpiryDate)
 		c.IndentedJSON(http.StatusOK, gin.H{"message": "created short url: " + shortUrlKey})
 		return
 	}
@@ -74,34 +87,18 @@ func createShortUrl(c *gin.Context) {
 
 func getLongUrlByKey(c *gin.Context) {
 	key := c.Param("key")
-	c.IndentedJSON(http.StatusOK, gin.H{"message": "getting url by " + key})
-}
 
-// helper functions for the endpoints
-func generateShortUrlKey(n int) string {
-	charset := "abcdefghijklmnopqrstuvwxyz" +
-		"ABCDEFGHIJKLMNOPQRSTUVWXYZ" +
-		"0123456789"
-
-	b := make([]byte, n)
-	for i := range n {
-		b[i] = charset[rand.Intn(len(charset))]
+	if value, ok := helpers.ShortUrls[key]; ok {
+		message := fmt.Sprintf(
+			"Fetched URL: %s, with alias: %s, creation date: %s, expiry date: %s.",
+			value["url"],
+			value["customAlias"],
+			value["creationDate"],
+			value["expiryDate"],
+		)
+		c.IndentedJSON(http.StatusOK, gin.H{"message": message})
+		return
 	}
-	return string(b)
-}
 
-// builds a map from individual components of each short url
-// and assigns it to the global map variable
-func buildMap(key, longUrl, customAlias, creationDate, expiryDate string) {
-	shorturls[key] = map[string]string{
-		"url":          longUrl,
-		"customAlias":  customAlias,
-		"creationDate": creationDate,
-		"expiryDate":   expiryDate,
-	}
-}
-
-func isValidDomainName(domainName string) bool {
-	validNameRegex, _ := regexp.Compile(`^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9][a-z0-9-]{0,61}[a-z0-9]$`)
-	return validNameRegex.MatchString(domainName)
+	c.IndentedJSON(http.StatusNotFound, gin.H{"message": "could not find key"})
 }
