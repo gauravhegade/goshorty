@@ -73,8 +73,16 @@ func createShortUrl(c *gin.Context) {
 	}
 
 	shortUrlKey := helpers.GenerateShortUrlKey(6)
-	customFormat := time.DateOnly + " " + time.TimeOnly
-	shortUrlCreationDate := time.Now().Format(customFormat)
+	t := time.Now()
+	customTimeFormat := "2006-01-02 15:04:05-07:00" // custom date format to adhere to postgres timestamptz format
+	shortUrlCreationDate := t.Format(customTimeFormat)
+
+	shortUrlExpiryDate, _ := time.Parse(customTimeFormat, su.ExpiryDate)
+	parsedCreationDate, _ := time.Parse(customTimeFormat, shortUrlCreationDate)
+	if shortUrlExpiryDate.Before(parsedCreationDate) {
+		c.IndentedJSON(http.StatusUnprocessableEntity, gin.H{"message": "Expiry date should be a future date"})
+		return
+	}
 
 	if validDomain := helpers.IsValidDomainName(su.LongUrl); validDomain {
 		helpers.BuildMap(shortUrlKey, su.LongUrl, su.CustomAlias, shortUrlCreationDate, su.ExpiryDate)
