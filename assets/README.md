@@ -1,0 +1,1 @@
+html css js static files migrations etc
