@@ -1,30 +1,28 @@
 package main
 
 import (
-	"database/sql"
 	"log"
 	"net/http"
 
-	"github.com/gauravhegade/goshorty/internal/models/sqlite"
+	"github.com/gauravhegade/goshorty/internal/models/store"
 	_ "github.com/mattn/go-sqlite3"
 )
 
 // dependency injection of URLDataModel
 // making it available to all underlying handler functions
 type app struct {
-	urls *sqlite.URLDataModel
+	store *store.URLDataModel
 }
 
 func main() {
-	db, err := sql.Open("sqlite3", "./db.sqlite3")
+	store, err := store.NewStore()
 	if err != nil {
-		log.Fatal(err.Error())
+		log.Fatal(err)
+		return
 	}
 
-	app := app{
-		urls: &sqlite.URLDataModel{
-			DB: db,
-		},
+	app := &app{
+		store: store,
 	}
 
 	server := http.Server{
