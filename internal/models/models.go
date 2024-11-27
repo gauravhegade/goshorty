@@ -10,6 +10,7 @@ type URLData struct {
 	Title     string    `json:"title,omitempty"`
 	CreatedOn time.Time `json:"created_on"`
 	// expires on is also optional
-	// empty/nil value does not exist for time type, therefore I am using struct pointers here which will have a nil value
+	// empty/nil value does not exist for time type,
+	//	therefore I am using struct pointers here which will have a nil value
 	ExpiresOn *time.Time `json:"expires_on"`
 }

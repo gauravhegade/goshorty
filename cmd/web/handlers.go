@@ -18,8 +18,10 @@ type httpResponse struct {
 }
 
 type shortURLRequest struct {
-	URL          string `json:"url"`
-	Title        string `json:"title,omitempty"`
+	URL   string `json:"url"`
+	Title string `json:"title,omitempty"`
+	// nil value exists for int64
+	// but I want to completely ignore the field if not provided
 	ExpiryInSecs *int64 `json:"expiry_in_secs"`
 }
 
@@ -91,11 +93,6 @@ func (app *app) shortenURL(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (app *app) isValidURL(url string) bool {
-	regex, _ := regexp.Compile(`[(http(s)?):\/\/(www\.)?a-zA-Z0-9@:%._\+~#=]{2,256}\.[a-z]{2,6}\b([-a-zA-Z0-9@:%_\+.~#?&//=]*)`)
-	return regex.MatchString(url)
-}
-
 func (app *app) redirectToURL(w http.ResponseWriter, r *http.Request) {
 	shortCode := r.PathValue("shortCode")
 	if shortCode == "" {
@@ -123,4 +120,33 @@ func (app *app) redirectToURL(w http.ResponseWriter, r *http.Request) {
 	log.Println("Redirecting to", urlData.URL)
 	w.Header().Set("Location", urlData.URL)
 	w.WriteHeader(http.StatusFound)
+}
+
+func (app *app) deleteURL(w http.ResponseWriter, r *http.Request) {
+	shortCode := r.PathValue("shortCode")
+	if shortCode == "" {
+		app.sendErrorResponse(w, "Invalid short code!", http.StatusBadRequest, nil)
+	}
+
+	err := app.store.DeleteURLData(shortCode)
+	if err != nil {
+		if err == store.ErrNotExists {
+			log.Println(err.Error())
+			app.sendErrorResponse(w, "URL not found", http.StatusNotFound, nil)
+			return
+		}
+		log.Println(err.Error())
+		app.sendErrorResponse(w, "Internal server error!", http.StatusInternalServerError, nil)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	app.sendResponse(w, map[string]any{
+		"message": "deleted requested resource",
+	})
+}
+
+func (app *app) isValidURL(url string) bool {
+	regex, _ := regexp.Compile(`[(http(s)?):\/\/(www\.)?a-zA-Z0-9@:%._\+~#=]{2,256}\.[a-z]{2,6}\b([-a-zA-Z0-9@:%_\+.~#?&//=]*)`)
+	return regex.MatchString(url)
 }

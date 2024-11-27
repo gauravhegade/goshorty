@@ -138,7 +138,6 @@ func (m *URLDataModel) CreateShortURL(url, title string, expiry time.Duration) (
 // fetches the data about the url from the cache
 func (m *URLDataModel) GetRedirectData(shortCode string) (models.URLData, error) {
 	urlData, exists := m.cache[shortCode]
-
 	if !exists {
 		return models.URLData{}, ErrNotExists
 	}
@@ -148,6 +147,27 @@ func (m *URLDataModel) GetRedirectData(shortCode string) (models.URLData, error)
 	}
 
 	return urlData, nil
+}
+
+func (m *URLDataModel) DeleteURLData(shortCode string) error {
+	if _, exists := m.cache[shortCode]; !exists {
+		return ErrNotExists
+	}
+	// only delete if the URL exists
+	delete(m.cache, shortCode)
+
+	result, err := m.db.Exec(`DELETE FROM urls WHERE short_code = ?`, shortCode)
+	if err != nil {
+		return err
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	log.Printf("DELETE request affected %d rows\n", rows)
+
+	return nil
 }
 
 func generateRandomString(length int) string {
